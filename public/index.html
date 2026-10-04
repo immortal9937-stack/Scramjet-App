@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Starfield Search</title>
 
-<!-- Scramjet Client Scripts -->
-<script src="/scramjet/scramjet.codecs.js"></script>
-<script src="/scramjet/scramjet.config.js"></script>
+<!-- Scramjet client scripts (order matters: transport + core first, app code last) -->
+<script src="/baremux/index.js" defer></script>
+<script src="/scram/scramjet.all.js" defer></script>
+<script src="/register-sw.js" defer></script>
+<script src="/search.js" defer></script>
+<script src="/index.js" defer></script>
 
 <style>
   * {
@@ -166,17 +169,41 @@
     font-weight: 300;
   }
 
-  /* Proxied Content Frame Container */
-  #proxy-frame {
+  /* Proxied content frame (created by Scramjet with id "sj-frame") */
+  #sj-frame {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     border: none;
     z-index: 5;
-    display: none;
     background: #fff;
+  }
+
+  /* Error messages (shown over everything, even when the UI is hidden) */
+  #sj-error-box {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 24px;
+    z-index: 30;
+    padding: 0 20px;
+    text-align: center;
+    pointer-events: none;
+  }
+  #sj-error {
+    margin: 0;
+    color: #ff8a80;
+    font-size: 14px;
+  }
+  #sj-error-code {
+    margin: 6px auto 0;
+    max-width: 420px;
+    color: #a1a1a1;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   /* Close Floating Button when viewing proxy */
@@ -201,40 +228,37 @@
 
 <canvas id="starfield"></canvas>
 
-<button id="home-btn" onclick="closeProxy()">Close Proxy</button>
+<button id="home-btn" type="button" onclick="closeProxy()">Close Proxy</button>
 
 <div class="center-container" id="main-ui">
   <div class="title-text">interesting</div>
 
   <div class="search-bar-wrapper">
-    <form class="search-form" action="javascript:void(0);" onsubmit="handleSearch(event)">
+    <form class="search-form" id="sj-form" action="javascript:void(0);">
       <div class="search-icon"></div>
-      <input 
-        type="search" 
-        id="search-url" 
-        class="search-input" 
-        placeholder="search" 
-        autocomplete="off" 
+      <input
+        type="search"
+        id="sj-address"
+        class="search-input"
+        placeholder="search"
+        autocomplete="off"
         autocorrect="off"
         autocapitalize="off"
         enterkeyhint="go"
-        required 
+        required
       />
+      <input id="sj-search-engine" type="hidden" value="https://www.google.com/search?q=%s" />
       <button type="submit" style="display: none;"></button>
     </form>
   </div>
 </div>
 
-<iframe id="proxy-frame"></iframe>
+<div id="sj-error-box">
+  <p id="sj-error"></p>
+  <pre id="sj-error-code"></pre>
+</div>
 
 <script>
-// Register Service Worker for Scramjet
-if ('serviceWorker' in navigator) {
-  var swScope = (typeof __scramjet$config !== 'undefined' && __scramjet$config.prefix) ? __scramjet$config.prefix : '/service/';
-  navigator.serviceWorker.register('/scramjet.sw.js', { scope: swScope })
-    .catch(function(err) { console.error('ServiceWorker registration failed:', err); });
-}
-
 // Canvas Starfield Engine
 (function () {
   var canvas = document.getElementById('starfield');
@@ -376,54 +400,15 @@ if ('serviceWorker' in navigator) {
   tick();
 })();
 
-// Form Navigation Handler
-function handleSearch(event) {
-  if (event) event.preventDefault();
-  
-  var inputEl = document.getElementById('search-url');
-  var inputVal = inputEl.value.trim();
-  if (!inputVal) return;
-
-  inputEl.blur();
-
-  var targetUrl = inputVal;
-  if (!/^https?:\/\//i.test(inputVal)) {
-    if (inputVal.includes('.') && !inputVal.includes(' ')) {
-      targetUrl = 'https://' + inputVal;
-    } else {
-      targetUrl = 'https://www.google.com/search?q=' + encodeURIComponent(inputVal);
-    }
-  }
-
-  // Validate Scramjet assets are present
-  if (typeof __scramjet$config === 'undefined' || typeof __scramjet$codecs === 'undefined') {
-    alert('Scramjet client scripts are missing or failed to load from /scramjet/. Verify server static routing.');
-    return;
-  }
-
-  var prefix = __scramjet$config.prefix || '/service/';
-  var codec = __scramjet$config.codec || __scramjet$codecs.xor;
-  var encodedUrl = prefix + codec.encode(targetUrl);
-
-  var iframe = document.getElementById('proxy-frame');
-  var mainUI = document.getElementById('main-ui');
-  var homeBtn = document.getElementById('home-btn');
-
-  iframe.src = encodedUrl;
-  iframe.style.display = 'block';
-  mainUI.classList.add('hidden');
-  homeBtn.style.display = 'block';
-}
-
+// Close the proxied page and return to the search screen.
+// (Opening the page is handled in /index.js.)
 function closeProxy() {
-  var iframe = document.getElementById('proxy-frame');
-  var mainUI = document.getElementById('main-ui');
-  var homeBtn = document.getElementById('home-btn');
-
-  iframe.src = 'about:blank';
-  iframe.style.display = 'none';
-  mainUI.classList.remove('hidden');
-  homeBtn.style.display = 'none';
+  var frame = document.getElementById('sj-frame');
+  if (frame) frame.remove();
+  document.getElementById('main-ui').classList.remove('hidden');
+  document.getElementById('home-btn').style.display = 'none';
+  document.getElementById('sj-error').textContent = '';
+  document.getElementById('sj-error-code').textContent = '';
 }
 </script>
 </body>
