@@ -49,7 +49,8 @@ const scramjet = new ScramjetController({
 	},
 });
 
-scramjet.init();
+// init() may be async; keep the promise so a search waits for it
+const scramjetReady = Promise.resolve(scramjet.init());
 
 const connection = new BareMux.BareMuxConnection(BASE + "baremux/worker.js");
 
@@ -67,6 +68,15 @@ function showNote(message) {
 	error.classList.add("ok");
 	error.textContent = message;
 	errorCode.textContent = "";
+}
+
+/** Reject with `message` if `promise` hasn't settled after `ms` (so we never hang silently). */
+function withTimeout(promise, ms, message) {
+	let timer;
+	const timeout = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new Error(message)), ms);
+	});
+	return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function readSavedWisp() {
@@ -131,24 +141,35 @@ form.addEventListener("submit", async (event) => {
 		return;
 	}
 
+	showNote("1/3 Starting the service worker…");
 	try {
 		await registerSW();
 		// make sure the worker is actually active before the first request
-		await navigator.serviceWorker.ready;
+		await withTimeout(
+			navigator.serviceWorker.ready,
+			15000,
+			"The service worker never became active (it may have failed to install)."
+		);
+		await withTimeout(scramjetReady, 10000, "Scramjet didn't finish starting.");
 	} catch (err) {
-		showError("Failed to register service worker.", err);
+		showError("Service worker problem.", err);
 		return;
 	}
 
 	const url = search(address.value, searchEngine.value);
 
+	showNote("2/3 Connecting to the Wisp server…");
 	try {
 		const transport = BASE + "libcurl/index.mjs";
 		if (
 			activeWisp !== wispUrl ||
 			(await connection.getTransport()) !== transport
 		) {
-			await connection.setTransport(transport, [{ websocket: wispUrl }]);
+			await withTimeout(
+				connection.setTransport(transport, [{ websocket: wispUrl }]),
+				15000,
+				"Couldn't set up the connection to " + wispUrl
+			);
 			activeWisp = wispUrl;
 		}
 	} catch (err) {
@@ -156,6 +177,7 @@ form.addEventListener("submit", async (event) => {
 		return;
 	}
 
+	showNote("3/3 Loading " + url + " …");
 	// replace any previous frame
 	document.getElementById("sj-frame")?.remove();
 
@@ -165,4 +187,12 @@ form.addEventListener("submit", async (event) => {
 	mainUI.classList.add("hidden");
 	homeBtn.style.display = "block";
 	frame.go(url);
+
+	// the status line sits over the page; hide it after a few seconds if nothing went wrong
+	setTimeout(() => {
+		if (error.classList.contains("ok")) error.textContent = "";
+	}, 6000);
 });
+
+// Tell the startup check in index.html that everything above ran without throwing.
+window.__sjReady = true;
