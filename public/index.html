@@ -5,12 +5,60 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Starfield Search</title>
 
+<script>
+// Startup diagnostics: phones have no dev tools, so show problems on screen.
+(function () {
+  var msgs = [];
+  function render() {
+    var head = document.getElementById("sj-error");
+    var code = document.getElementById("sj-error-code");
+    if (!head || !code || !msgs.length) return;
+    head.classList.remove("ok");
+    head.textContent = "Startup problem";
+    code.textContent = msgs.join("\n");
+  }
+  window.__sjDiag = function (m) {
+    if (msgs.indexOf(m) < 0) msgs.push(m);
+    render();
+  };
+  document.addEventListener("DOMContentLoaded", render);
+  // capture phase: also catches <script> files that failed to load
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) {
+      window.__sjDiag("Failed to load " + (t.src || t.href));
+    } else {
+      window.__sjDiag((e.message || "Script error") +
+        (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : ""));
+    }
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e.reason;
+    window.__sjDiag("Unhandled: " + (r && r.message ? r.message : r));
+  });
+  // Searching before the app script is running would silently do nothing; say so instead.
+  document.addEventListener("submit", function (e) {
+    if (!window.__sjReady) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.__sjDiag("The app hasn't started, so search can't run yet.");
+    }
+  }, true);
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      if (!window.__sjReady) window.__sjDiag("The app script did not start.");
+    }, 2000);
+  });
+})();
+</script>
+
 <!-- Scramjet client scripts (order matters: transport + core first, app code last) -->
-<script src="/baremux/index.js" defer></script>
-<script src="/scram/scramjet.all.js" defer></script>
-<script src="/register-sw.js" defer></script>
-<script src="/search.js" defer></script>
-<script src="/index.js" defer></script>
+<script src="baremux/index.js" defer></script>
+<script src="scram/scramjet.all.js" defer></script>
+<script src="wisp-config.js" defer></script>
+<script src="register-sw.js" defer></script>
+<script src="search.js" defer></script>
+<script src="index.js" defer></script>
 
 <style>
   * {
@@ -206,6 +254,15 @@
     word-break: break-word;
   }
 
+  #sj-error.ok { color: #7ee787; }
+  #wisp-link {
+    margin-top: 16px;
+    color: #666;
+    font-size: 13px;
+    text-decoration: none;
+  }
+  #wisp-link:active { color: #aaa; }
+
   /* Close Floating Button when viewing proxy */
   #home-btn {
     position: fixed;
@@ -251,6 +308,8 @@
       <button type="submit" style="display: none;"></button>
     </form>
   </div>
+
+  <a id="wisp-link" href="#">wisp server</a>
 </div>
 
 <div id="sj-error-box">
